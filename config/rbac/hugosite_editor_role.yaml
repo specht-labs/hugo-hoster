@@ -1,0 +1,24 @@
+# permissions for end users to edit hugosites.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hugosite-editor-role
+rules:
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - hugosites
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - hugosites/status
+  verbs:
+  - get

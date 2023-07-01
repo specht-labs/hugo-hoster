@@ -1,0 +1,4 @@
+## Append samples you want in your CSV to this file as resources ##
+resources:
+- hugo-hoster_v1alpha1_hugosite.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

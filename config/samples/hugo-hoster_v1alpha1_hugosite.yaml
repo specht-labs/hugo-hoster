@@ -1,0 +1,6 @@
+apiVersion: hugo-hoster.cedi.dev/v1alpha1
+kind: HugoSite
+metadata:
+  name: hugosite-sample
+spec:
+  # TODO(user): Add fields here
