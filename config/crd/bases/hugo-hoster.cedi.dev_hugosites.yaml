@@ -15,7 +15,20 @@ spec:
     singular: hugosite
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .status.LastBuild
+      name: LastBuild
+      type: string
+    - jsonPath: .status.Commit
+      name: Commit
+      type: string
+    - jsonPath: .status.Status
+      name: Status
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: HugoSite is the Schema for the hugosites API
@@ -35,13 +48,80 @@ spec:
           spec:
             description: HugoSiteSpec defines the desired state of HugoSite
             properties:
-              foo:
-                description: Foo is an example field of HugoSite. Edit hugosite_types.go
-                  to remove/update
+              interval:
+                description: PollInterval is the polling interval in which the hugo-site
+                  is refreshed as a go time interval string
+                format: int64
+                type: integer
+              mainbranch:
+                description: 'MainBranch specifies the branch from which to build
+                  the site. (default: main)'
                 type: string
+              preview:
+                description: Preview is the Preview object to enable or disable preview
+                  builds
+                properties:
+                  branches:
+                    description: Branch (regex) controls from which branches the preview
+                      is built
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    description: Enabled controls if previews are build
+                    type: boolean
+                  exclude:
+                    description: ExcludeBranch controls which branch to exclude from
+                      preview builds, such as `main` or `site`
+                    items:
+                      type: string
+                    type: array
+                required:
+                - enabled
+                type: object
+              repository:
+                description: Repository specifies the target Repository to pull from
+                  for building the hugo site
+                type: string
+              type:
+                description: "BuildType configures how the Hugo-Site is rebuild. \n
+                  Poll takes the configured polling interval to rebuild the page Webhook
+                  requires a CI/CD Pipeline to call the Webhook URL of this page to
+                  re-build the site"
+                enum:
+                - Poll
+                - Webhook
+                type: string
+              url:
+                minLength: 1
+                type: string
+            required:
+            - interval
+            - repository
+            - type
+            - url
             type: object
           status:
             description: HugoSiteStatus defines the observed state of HugoSite
+            properties:
+              commit:
+                description: Commit contains the commit-id of the current build
+                type: string
+              lastbuild:
+                description: LastBuild is a date-time when the Hugo Page was last
+                  built
+                type: string
+              status:
+                description: Status contains the status of the last build action
+                enum:
+                - Failed
+                - Success
+                - Cancelled
+                type: string
+            required:
+            - commit
+            - lastbuild
+            - status
             type: object
         type: object
     served: true

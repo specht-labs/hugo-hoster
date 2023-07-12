@@ -17,11 +17,13 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"go.uber.org/zap"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,16 +31,21 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	hugohosterv1alpha1 "github.com/cedi/hugo-hoster/api/v1alpha1"
 	"github.com/cedi/hugo-hoster/controllers"
+	"github.com/cedi/hugo-hoster/pkg/observability"
+	"github.com/go-logr/zapr"
+
 	//+kubebuilder:scaffold:imports
+
+	"github.com/uptrace/opentelemetry-go-extra/otelzap"
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme         = runtime.NewScheme()
+	serviceName    = "hugo-hoster"
+	serviceVersion = "1.0.0"
 )
 
 func init() {
@@ -52,18 +59,41 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var debug bool
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
+		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&debug, "debug", false, "Turn on debug logging")
+
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	// Initialize Logging
+	otelLogger, undo := observability.InitLogging(debug)
+	defer otelLogger.Sync()
+	defer undo()
+
+	ctrl.SetLogger(zapr.NewLogger(otelzap.L().Logger))
+
+	// Initialize Tracing (OpenTelemetry)
+	traceProvider, tracer, err := observability.InitTracer(serviceName, serviceVersion)
+	if err != nil {
+		otelzap.L().Sugar().Errorw("failed initializing tracing",
+			zap.Error(err),
+		)
+		os.Exit(1)
+	}
+
+	ctx, span := tracer.Start(context.Background(), "main.startManager")
+
+	defer func() {
+		if err := traceProvider.Shutdown(ctx); err != nil {
+			otelzap.L().Sugar().Errorw("Error shutting down tracer provider",
+				zap.Error(err),
+			)
+		}
+	}()
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -85,7 +115,10 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		span.RecordError(err)
+		otelzap.L().Sugar().Errorw("unable to start urlshortener",
+			zap.Error(err),
+		)
 		os.Exit(1)
 	}
 
@@ -93,23 +126,33 @@ func main() {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HugoSite")
+		span.RecordError(err)
+		otelzap.L().Sugar().Errorw("unable to create controller",
+			zap.Error(err),
+			zap.String("controller", "HugoSite"),
+		)
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		otelzap.L().Sugar().Errorw("unable to set up health check",
+			zap.Error(err),
+		)
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		otelzap.L().Sugar().Errorw("unable to set up ready check",
+			zap.Error(err),
+		)
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	otelzap.L().Info("starting urlshortener")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		otelzap.L().Sugar().Errorw("unable running manager",
+			zap.Error(err),
+		)
 		os.Exit(1)
 	}
 }
