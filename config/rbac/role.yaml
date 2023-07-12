@@ -1,0 +1,33 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - hugosites
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - hugosites/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - hugosites/status
+  verbs:
+  - get
+  - patch
+  - update
