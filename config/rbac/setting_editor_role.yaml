@@ -1,0 +1,24 @@
+# permissions for end users to edit settings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: setting-editor-role
+rules:
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - settings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hugo-hoster.cedi.dev
+  resources:
+  - settings/status
+  verbs:
+  - get

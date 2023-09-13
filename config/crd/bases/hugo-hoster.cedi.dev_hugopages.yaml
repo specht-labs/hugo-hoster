@@ -5,14 +5,14 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.0
   creationTimestamp: null
-  name: hugosites.hugo-hoster.cedi.dev
+  name: hugopages.hugo-hoster.cedi.dev
 spec:
   group: hugo-hoster.cedi.dev
   names:
-    kind: HugoSite
-    listKind: HugoSiteList
-    plural: hugosites
-    singular: hugosite
+    kind: HugoPage
+    listKind: HugoPageList
+    plural: hugopages
+    singular: hugopage
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -31,7 +31,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: HugoSite is the Schema for the hugosites API
+        description: HugoPage is the Schema for the HugoPages API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -46,39 +46,16 @@ spec:
           metadata:
             type: object
           spec:
-            description: HugoSiteSpec defines the desired state of HugoSite
+            description: HugoPageSpec defines the desired state of HugoPage
             properties:
-              interval:
-                description: PollInterval is the polling interval in which the hugo-site
-                  is refreshed as a go time interval string
-                format: int64
-                type: integer
-              mainbranch:
-                description: 'MainBranch specifies the branch from which to build
-                  the site. (default: main)'
+              branch:
+                description: 'Branch specifies the branch from which to build the
+                  site. (default: main)'
                 type: string
-              preview:
-                description: Preview is the Preview object to enable or disable preview
-                  builds
-                properties:
-                  branches:
-                    description: Branch (regex) controls from which branches the preview
-                      is built
-                    items:
-                      type: string
-                    type: array
-                  enabled:
-                    description: Enabled controls if previews are build
-                    type: boolean
-                  exclude:
-                    description: ExcludeBranch controls which branch to exclude from
-                      preview builds, such as `main` or `site`
-                    items:
-                      type: string
-                    type: array
-                required:
-                - enabled
-                type: object
+              interval:
+                description: CronInterval is the polling interval in which the hugo-site
+                  is refreshed as a cron syntax string
+                type: string
               repository:
                 description: Repository specifies the target Repository to pull from
                   for building the hugo site
@@ -89,20 +66,16 @@ spec:
                   requires a CI/CD Pipeline to call the Webhook URL of this page to
                   re-build the site"
                 enum:
-                - Poll
-                - Webhook
+                - cron
                 type: string
               url:
-                minLength: 1
                 type: string
             required:
-            - interval
             - repository
-            - type
             - url
             type: object
           status:
-            description: HugoSiteStatus defines the observed state of HugoSite
+            description: HugoPageStatus defines the observed state of HugoPage
             properties:
               commit:
                 description: Commit contains the commit-id of the current build

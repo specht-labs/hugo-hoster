@@ -1,0 +1,18 @@
+apiVersion: hugo-hoster.cedi.dev/v1alpha1
+kind: Setting
+metadata:
+  name: settings
+spec:
+  ingressClassName: nginx
+  serving_url: https://f003.backblazeb2.com/file
+  nginxProxyReplica: 1
+  tls:
+    enable: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+  s3_config:
+    endpoint: https://s3.eu-central-003.backblazeb2.com
+    bucketname: cedi-testing
+    secretName: s3secret
+    accessKeyIdKeyName: accessKeyId
+    accessKeyKeyName: accessKey

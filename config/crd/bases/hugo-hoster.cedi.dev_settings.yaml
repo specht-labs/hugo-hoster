@@ -1,0 +1,113 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.9.0
+  creationTimestamp: null
+  name: settings.hugo-hoster.cedi.dev
+spec:
+  group: hugo-hoster.cedi.dev
+  names:
+    kind: Setting
+    listKind: SettingList
+    plural: settings
+    singular: setting
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tls.enable
+      name: TlsEnabled
+      type: string
+    - jsonPath: .spec.s3_config.endpoint
+      name: S3Endpoint
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Setting is the Schema for the settings API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SettingSpec defines the desired state of Setting
+            properties:
+              ingressClassName:
+                default: nginx
+                description: IngressClassName makes it possible to override the ingress-class
+                type: string
+              nginxProxyReplica:
+                default: 1
+                description: NginxProxyReplica is the number of replicas for each
+                  page
+                format: int32
+                type: integer
+              s3_config:
+                description: S3Config contains the configuration of the S3 bucket
+                  to upload the pages to
+                properties:
+                  accessKeyIdKeyName:
+                    default: AccessKeyId
+                    description: AccessKeyIDRef is the name of the key in the S3SecretName
+                      that contains the AccessKeyId
+                    type: string
+                  accessKeyKeyName:
+                    default: AccessKey
+                    description: AccessKeyRef is the name of the key in the S3SecretName
+                      that contains the AccessKey
+                    type: string
+                  bucketname:
+                    description: BucketName is the S3 Bucket to which all sites are
+                      uploaded
+                    type: string
+                  endpoint:
+                    description: S3Endpoint is the Endpoint URL for the S3 Bucket
+                      to upload pages to
+                    type: string
+                  secretName:
+                    description: SecretName is the name of the Kubernetes Secret that
+                      contains the S3 AccessKeyId and the AccessKey
+                    type: string
+                required:
+                - bucketname
+                - endpoint
+                - secretName
+                type: object
+              serving_url:
+                description: ProxyURL is the URL from which the static files are served.
+                  Most of the time this is the same as `spec.S3Config.Endpoint``.
+                  If this is empty, `spec.S3Config.Endpoint` is used
+                type: string
+              tls:
+                default:
+                  enable: false
+                description: TLS configure if you want to enable TLS
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  enable:
+                    default: false
+                    type: boolean
+                type: object
+            required:
+            - s3_config
+            type: object
+          status:
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

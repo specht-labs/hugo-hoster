@@ -39,6 +39,7 @@ import (
 
 	//+kubebuilder:scaffold:imports
 
+	pageClient "github.com/cedi/hugo-hoster/pkg/client"
 	"github.com/uptrace/opentelemetry-go-extra/otelzap"
 )
 
@@ -59,12 +60,15 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var namespaced bool
 	var debug bool
+	var settingsName string
 
+	flag.StringVar(&settingsName, "settingName", "settings", "The name of the hugo-hoster/Setting resource used to configure this instance of hugo-hoster")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&namespaced, "namespaced", true, "Restrict the hugo-hoster to only list resources in the current namespace")
 	flag.BoolVar(&debug, "debug", false, "Turn on debug logging")
 
 	flag.Parse()
@@ -95,25 +99,37 @@ func main() {
 		}
 	}()
 
+	// Start namespaced
+	namespace := ""
+
+	if namespaced {
+		_, span := tracer.Start(context.Background(), "main.loadNamespace")
+		// try to read the namespace from /var/run
+		namespaceByte, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err != nil {
+			span.RecordError(err)
+			otelzap.L().Sugar().Errorw("Error shutting down tracer provider",
+				zap.Error(err),
+			)
+			os.Exit(1)
+		}
+		span.End()
+		namespace = string(namespaceByte)
+	}
+
+	_, span = tracer.Start(context.Background(), "main.startManager")
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "9123ff57.cedi.dev",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		Scheme:                        scheme,
+		MetricsBindAddress:            metricsAddr,
+		Port:                          9443,
+		HealthProbeBindAddress:        probeAddr,
+		LeaderElection:                false,
+		LeaderElectionID:              "9123ff57.cedi.dev",
+		LeaderElectionReleaseOnCancel: false,
+		Namespace:                     namespace,
 	})
+
 	if err != nil {
 		span.RecordError(err)
 		otelzap.L().Sugar().Errorw("unable to start urlshortener",
@@ -122,10 +138,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.HugoSiteReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	hugoPageClient := pageClient.NewHugoPageClient(
+		mgr.GetClient(),
+		tracer,
+	)
+
+	settingClient := pageClient.NewSettingsClient(
+		mgr.GetClient(),
+		tracer,
+	)
+
+	hugoPageController := controllers.NewHugoPageReconciler(
+		mgr.GetClient(),
+		hugoPageClient,
+		settingClient,
+		settingsName,
+		mgr.GetScheme(),
+		tracer,
+	)
+
+	if err = hugoPageController.SetupWithManager(mgr); err != nil {
 		span.RecordError(err)
 		otelzap.L().Sugar().Errorw("unable to create controller",
 			zap.Error(err),
@@ -134,6 +166,8 @@ func main() {
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
+
+	span.End()
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		otelzap.L().Sugar().Errorw("unable to set up health check",
@@ -148,7 +182,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	otelzap.L().Info("starting urlshortener")
+	otelzap.L().Info("starting Hugo-Hoster")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		otelzap.L().Sugar().Errorw("unable running manager",
 			zap.Error(err),

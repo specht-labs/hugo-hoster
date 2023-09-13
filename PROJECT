@@ -13,7 +13,15 @@ resources:
   controller: true
   domain: cedi.dev
   group: hugo-hoster
-  kind: HugoSite
+  kind: HugoPage
+  path: github.com/cedi/hugo-hoster/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: cedi.dev
+  group: hugo-hoster
+  kind: Setting
   path: github.com/cedi/hugo-hoster/api/v1alpha1
   version: v1alpha1
 version: "3"

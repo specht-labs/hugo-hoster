@@ -17,67 +17,38 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"time"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// HugoSitePreviewSpec controls if and how previews are built for this page
-type HugoSitePreviewSpec struct {
-	// Enabled controls if previews are build
-	// +kubebuilder:default:false
-	Enabled bool `json:"enabled"`
-
-	// Branch (regex) controls from which branches the preview is built
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:[*]
-	Branch []string `json:"branches"`
-
-	// ExcludeBranch controls which branch to exclude from preview builds, such as `main` or `site`
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:[main, site]
-	ExcludeBranch []string `json:"exclude"`
-}
-
-// HugoSiteSpec defines the desired state of HugoSite
-type HugoSiteSpec struct {
+// HugoPageSpec defines the desired state of HugoPage
+type HugoPageSpec struct {
 	// Repository specifies the target Repository to pull from for building the hugo site
 	// +kubebuilder:validation:Required
 	// +kubebuilder:example:https://github.com/cedi/cedi.github.io.git
 	Repository string `json:"repository"`
 
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	URL string `json:"url"`
-
-	// MainBranch specifies the branch from which to build the site. (default: main)
+	// Branch specifies the branch from which to build the site. (default: main)
 	// +kubebuilder:default:main
-	MainBranch string `json:"mainbranch,omitempty"`
+	Branch string `json:"branch,omitempty"`
 
-	// Preview is the Preview object to enable or disable preview builds
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:nil
-	Preview *HugoSitePreviewSpec `json:"preview,omitempty"`
+	// +kubebuilder:validation:Required
+	URL string `json:"url"`
 
 	// BuildType configures how the Hugo-Site is rebuild.
 	//
 	// Poll takes the configured polling interval to rebuild the page
 	// Webhook requires a CI/CD Pipeline to call the Webhook URL of this page to re-build the site
-	// +kubebuilder:validation:Enum=Poll;Webhook
-	// +kubebuilder:default:Poll
-	BuildType string `json:"type"`
+	// +kubebuilder:validation:Enum=cron
+	// +kubebuilder:default:cron
+	BuildType string `json:"type,omitempty"`
 
-	// PollInterval is the polling interval in which the hugo-site is refreshed as a go time interval string
-	// +kubebuilder:validation:Pattern:^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
-	// +kubebuilder:default:5m
-	PollInterval time.Duration `json:"interval"`
+	// CronInterval is the polling interval in which the hugo-site is refreshed as a cron syntax string
+	// +kubebuilder:default:"*/5 * * * *"
+	CronInterval string `json:"interval,omitempty"`
 }
 
-// HugoSiteStatus defines the observed state of HugoSite
-type HugoSiteStatus struct {
+// HugoPageStatus defines the observed state of HugoPage
+type HugoPageStatus struct {
 	// LastBuild is a date-time when the Hugo Page was last built
 	// +kubebuilder:validation:Format:date-time
 	LastBuild string `json:"lastbuild"`
@@ -90,7 +61,7 @@ type HugoSiteStatus struct {
 	Status string `json:"status"`
 }
 
-// HugoSite is the Schema for the hugosites API
+// HugoPage is the Schema for the HugoPages API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
@@ -99,22 +70,22 @@ type HugoSiteStatus struct {
 // +kubebuilder:printcolumn:name="Commit",type=string,JSONPath=`.status.Commit`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.Status`
 // +k8s:openapi-gen=true
-type HugoSite struct {
+type HugoPage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   HugoSiteSpec   `json:"spec,omitempty"`
-	Status HugoSiteStatus `json:"status,omitempty"`
+	Spec   HugoPageSpec   `json:"spec,omitempty"`
+	Status HugoPageStatus `json:"status,omitempty"`
 }
 
-// HugoSiteList contains a list of HugoSite
+// HugoPageList contains a list of HugoPage
 // +kubebuilder:object:root=true
-type HugoSiteList struct {
+type HugoPageList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []HugoSite `json:"items"`
+	Items           []HugoPage `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&HugoSite{}, &HugoSiteList{})
+	SchemeBuilder.Register(&HugoPage{}, &HugoPageList{})
 }

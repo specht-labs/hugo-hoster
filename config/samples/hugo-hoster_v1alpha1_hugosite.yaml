@@ -1,6 +1,10 @@
 apiVersion: hugo-hoster.cedi.dev/v1alpha1
-kind: HugoSite
+kind: HugoPage
 metadata:
-  name: hugosite-sample
+  name: uneerie
 spec:
-  # TODO(user): Add fields here
+  repository: https://github.com/uneerie/uneerie.de.git
+  branch: main
+  url: test.cedi.dev
+  type: cron
+  interval: '*/5 * * * *'

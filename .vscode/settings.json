@@ -13,8 +13,6 @@
         "otlptracehttp",
         "semconv",
         "serrors",
-        "shortlink",
-        "shortlinks",
         "swaggo",
         "urlshortener"
     ]
