@@ -353,12 +353,13 @@ func (r *HugoPageReconciler) upsertPageIngress(ctx context.Context, page *hugoho
 }
 
 func (r *HugoPageReconciler) upsertNginxProxyService(ctx context.Context, page *hugohosterv1alpha1.HugoPage) (*apiv1.Service, error) {
-	service := &apiv1.Service{}
+	serviceName := fmt.Sprintf("nginx-proxy-%s-svc", page.Name)
 
-	err := r.client.Get(ctx, types.NamespacedName{Name: page.Name, Namespace: page.Namespace}, service)
+	service := &apiv1.Service{}
+	err := r.client.Get(ctx, types.NamespacedName{Name: serviceName, Namespace: page.Namespace}, service)
 
 	service.ObjectMeta = metav1.ObjectMeta{
-		Name:      fmt.Sprintf("nginx-proxy-%s-svc", page.Name),
+		Name:      serviceName,
 		Namespace: page.Namespace,
 		Labels:    makeLabels(page, "nginx-proxy"),
 	}
