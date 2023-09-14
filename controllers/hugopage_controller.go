@@ -305,7 +305,7 @@ func (r *HugoPageReconciler) upsertPageIngress(ctx context.Context, page *hugoho
 								PathType: &pathTypePrefix,
 								Backend: networkingv1.IngressBackend{
 									Service: &networkingv1.IngressServiceBackend{
-										Name: fmt.Sprintf("nginx-proxy-%s", page.Name),
+										Name: fmt.Sprintf("nginx-proxy-%s-svc", page.Name),
 										Port: networkingv1.ServiceBackendPort{
 											Number: 80,
 										},
@@ -358,7 +358,7 @@ func (r *HugoPageReconciler) upsertNginxProxyService(ctx context.Context, page *
 	err := r.client.Get(ctx, types.NamespacedName{Name: page.Name, Namespace: page.Namespace}, service)
 
 	service.ObjectMeta = metav1.ObjectMeta{
-		Name:      page.Name,
+		Name:      fmt.Sprintf("nginx-proxy-%s-svc", page.Name),
 		Namespace: page.Namespace,
 		Labels:    makeLabels(page, "nginx-proxy"),
 	}
