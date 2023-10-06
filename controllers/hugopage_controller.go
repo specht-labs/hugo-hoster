@@ -552,7 +552,7 @@ http {
 	}
 
 	location / {
-	  rewrite ^(.*)\/(?!index\.html)$ $1/index.html last;
+	  rewrite ^(.*)(?!index\.html)$ $1/index.html last;
 	  proxy_pass {{.S3_URL}}/{{.BUCKET_NAME}}/{{.PAGE_NAME}}/;
 	  proxy_redirect off;
 	  proxy_intercept_errors on;
