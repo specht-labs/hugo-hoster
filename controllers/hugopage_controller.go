@@ -211,8 +211,9 @@ func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page 
 						RestartPolicy: apiv1.RestartPolicyOnFailure,
 						Containers: []apiv1.Container{
 							{
-								Name:  "page-builder",
-								Image: "ghcr.io/hugo-hoster/page_builder:main",
+								Name:            "page-builder",
+								Image:           "ghcr.io/hugo-hoster/page_builder:main",
+								ImagePullPolicy: apiv1.PullAlways,
 								Env: []apiv1.EnvVar{
 									{
 										Name:  "REPO_URL",
