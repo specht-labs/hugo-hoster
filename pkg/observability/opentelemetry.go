@@ -97,11 +97,16 @@ func InitLogging(debug bool) (*otelzap.Logger, func()) {
 		panic(fmt.Sprintf("Failed to initialize logger (%v)", err))
 	}
 
+	withStackTrace := false
+	if debug {
+		withStackTrace = true
+	}
+
 	otelZap := otelzap.New(zapLog,
 		otelzap.WithTraceIDField(true),
 		otelzap.WithCaller(true),
 		otelzap.WithErrorStatusLevel(zap.ErrorLevel),
-		otelzap.WithStackTrace(false),
+		otelzap.WithStackTrace(withStackTrace),
 	)
 
 	undo := otelzap.ReplaceGlobals(otelZap)

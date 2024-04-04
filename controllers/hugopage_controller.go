@@ -43,8 +43,8 @@ import (
 	hugohosterv1alpha1 "github.com/cedi/hugo-hoster/api/v1alpha1"
 	pageClient "github.com/cedi/hugo-hoster/pkg/client"
 	"github.com/cedi/hugo-hoster/pkg/observability"
+	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	"github.com/uptrace/opentelemetry-go-extra/otelzap"
 )
 
 // HugoPageReconciler reconciles a HugoPage object
@@ -82,7 +82,7 @@ func NewHugoPageReconciler(client client.Client, pageClient *pageClient.HugoPage
 func (r *HugoPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	startTime := time.Now()
 	defer func() {
-		reconcilerDuration.WithLabelValues("pagename", req.Name, req.Namespace).Observe(float64(time.Since(startTime).Microseconds()))
+		reconcilerDuration.WithLabelValues("page_name", req.Name, req.Namespace).Observe(float64(time.Since(startTime).Microseconds()))
 	}()
 
 	span := trace.SpanFromContext(ctx)
@@ -93,38 +93,40 @@ func (r *HugoPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		defer span.End()
 	}
 
-	span.SetAttributes(attribute.String("pagename", req.Name))
+	span.SetAttributes(attribute.String("page_name", req.Name))
 
-	log := otelzap.L().Sugar().With(zap.String("name", "reconciler"), zap.String("pagename", req.NamespacedName.String()))
+	log := observability.NewZapLoggerWithCtxSpanPageName("Reconcile", ctx, span, req.NamespacedName.String())
 
 	// Get Hugo Page from etcd
 	page, err := r.pageClient.GetNamespaced(ctx, req.NamespacedName)
 	if err != nil || page == nil {
 		if k8serrors.IsNotFound(err) {
-			observability.RecordInfo(ctx, span, log, "Hugo Page resource not found. Ignoring since object must be deleted")
+			observability.RecordInfo(&log, span, "Hugo Page resource not found. Ignoring since object must be deleted")
+
 		} else {
-			observability.RecordError(ctx, span, log, err, "Failed to fetch HugoPage resource")
+			observability.RecordError(&log, span, err, "Failed to fetch HugoPage resource")
 		}
 	}
 
 	settings, err := r.settingClient.GetNameNamespace(ctx, r.settingName, req.Namespace)
 	if err != nil || settings == nil {
-		observability.RecordPanic(ctx, span, log, err, "Failed to fetch Setting resource. You MUST configure hugo-hoster before deploying a site with the setting object name=%s", r.settingName)
-		os.Exit(1) // just a failsafe... RecordPanic should already terminate the program
+		span.RecordError(err)
+		log.Panicw(fmt.Sprintf("Failed to fetch Setting resource. You MUST configure hugo-hoster before deploying a site with the setting object name=%s", r.settingName), zap.Error(err))
+		os.Exit(1) // just a failsafe... Panicw should already terminate the program
 	}
 
-	_, err = r.upsertPageBuilderCronJob(ctx, page, settings)
+	_, err = r.upsertConfigMap(ctx, page, settings)
 	if err != nil {
-		observability.RecordError(ctx, span, log, err, "Failed to upsert page-builder CronJob")
+		observability.RecordError(&log, span, err, "Failed to upsert page-builder nginx proxy config")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 1 * time.Minute,
 		}, err
 	}
 
-	_, err = r.upsertConfigMap(ctx, page, settings)
+	_, err = r.upsertPageBuilderCronJob(ctx, page, settings)
 	if err != nil {
-		observability.RecordError(ctx, span, log, err, "Failed to upsert page-builder nginx proxy config")
+		observability.RecordError(&log, span, err, "Failed to upsert page-builder CronJob")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 1 * time.Minute,
@@ -133,7 +135,7 @@ func (r *HugoPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	_, err = r.upsertPageNginxProxy(ctx, page, settings)
 	if err != nil {
-		observability.RecordError(ctx, span, log, err, "Failed to upsert page-builder nginx proxy deployment")
+		observability.RecordError(&log, span, err, "Failed to upsert page-builder nginx proxy deployment")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 1 * time.Minute,
@@ -142,7 +144,7 @@ func (r *HugoPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	_, err = r.upsertNginxProxyService(ctx, page)
 	if err != nil {
-		observability.RecordError(ctx, span, log, err, "Failed to upsert nginx-proxy Service")
+		observability.RecordError(&log, span, err, "Failed to upsert nginx-proxy Service")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 1 * time.Minute,
@@ -151,7 +153,7 @@ func (r *HugoPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	_, err = r.upsertPageIngress(ctx, page, settings)
 	if err != nil {
-		observability.RecordError(ctx, span, log, err, "Failed to upsert nginx-proxy Ingress")
+		observability.RecordError(&log, span, err, "Failed to upsert nginx-proxy Ingress")
 		return ctrl.Result{
 			Requeue:      true,
 			RequeueAfter: 1 * time.Minute,
@@ -174,14 +176,6 @@ func (r *HugoPageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func makeLabels(page *hugohosterv1alpha1.HugoPage, component string) map[string]string {
-	return map[string]string{
-		"app":       "hugo-hoster",
-		"component": component,
-		"page":      page.Name,
-	}
-}
-
 func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page *hugohosterv1alpha1.HugoPage, settings *hugohosterv1alpha1.Setting) (*batchv1.CronJob, error) {
 	startingDeadlineSeconds := int64(100)
 	suspend := bool(false)
@@ -197,6 +191,25 @@ func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page 
 		Labels:    makeLabels(page, "builder"),
 	}
 
+	defaultImage := "ghcr.io/hugo-hoster/page_builder"
+	defaultTag := "main"
+	imagePullPolicy := apiv1.PullIfNotPresent
+	builderContainerImage := fmt.Sprintf("%s:%s", defaultImage, defaultTag)
+
+	if page.Spec.Options != nil && page.Spec.Options.BuildImageOptions != nil {
+		if page.Spec.Options.BuildImageOptions.Image != nil {
+			builderContainerImage = strings.ReplaceAll(builderContainerImage, defaultImage, *page.Spec.Options.BuildImageOptions.Image)
+		}
+
+		if page.Spec.Options.BuildImageOptions.Tag != nil {
+			builderContainerImage = strings.ReplaceAll(builderContainerImage, defaultTag, *page.Spec.Options.BuildImageOptions.Tag)
+		}
+
+		if page.Spec.Options.BuildImageOptions.ImagePullPolicy != nil {
+			imagePullPolicy = *page.Spec.Options.BuildImageOptions.ImagePullPolicy
+		}
+	}
+
 	builderCronJob.Spec = batchv1.CronJobSpec{
 		Schedule:                   page.Spec.CronInterval,
 		ConcurrencyPolicy:          "Forbid",
@@ -207,13 +220,16 @@ func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page 
 		JobTemplate: batchv1.JobTemplateSpec{
 			Spec: batchv1.JobSpec{
 				Template: apiv1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: builderCronJob.ObjectMeta.Labels,
+					},
 					Spec: apiv1.PodSpec{
 						RestartPolicy: apiv1.RestartPolicyOnFailure,
 						Containers: []apiv1.Container{
 							{
 								Name:            "page-builder",
-								Image:           "ghcr.io/hugo-hoster/page_builder:main",
-								ImagePullPolicy: apiv1.PullAlways,
+								Image:           builderContainerImage,
+								ImagePullPolicy: imagePullPolicy,
 								Env: []apiv1.EnvVar{
 									{
 										Name:  "REPO_URL",
@@ -252,6 +268,26 @@ func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page 
 									{
 										Name:  "S3_ENDPOINT",
 										Value: settings.Spec.S3Config.Endpoint,
+									},
+								},
+								VolumeMounts: []apiv1.VolumeMount{
+									{
+										Name:      "hugo-buildcmd",
+										MountPath: "/home/builder/build-hugo.sh",
+										SubPath:   "build-hugo.sh",
+										ReadOnly:  true,
+									},
+								},
+							},
+						},
+						Volumes: []apiv1.Volume{
+							{
+								Name: "hugo-buildcmd",
+								VolumeSource: apiv1.VolumeSource{
+									ConfigMap: &apiv1.ConfigMapVolumeSource{
+										LocalObjectReference: apiv1.LocalObjectReference{
+											Name: fmt.Sprintf("nginx-proxy-conf-%s", page.Name),
+										},
 									},
 								},
 							},
@@ -398,19 +434,20 @@ func (r *HugoPageReconciler) upsertNginxProxyService(ctx context.Context, page *
 func (r *HugoPageReconciler) upsertPageNginxProxy(ctx context.Context, page *hugohosterv1alpha1.HugoPage, settings *hugohosterv1alpha1.Setting) (*appsv1.Deployment, error) {
 
 	deploymentName := fmt.Sprintf("nginx-proxy-%s", page.Name)
-	deployment := &appsv1.Deployment{}
+	oldDeployment := &appsv1.Deployment{}
+	newDeployment := &appsv1.Deployment{}
 
 	labels := makeLabels(page, "nginx-proxy")
 
-	err := r.client.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: page.Namespace}, deployment)
+	err := r.client.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: page.Namespace}, oldDeployment)
 
-	deployment.ObjectMeta = metav1.ObjectMeta{
+	newDeployment.ObjectMeta = metav1.ObjectMeta{
 		Name:      deploymentName,
 		Namespace: page.Namespace,
 		Labels:    labels,
 	}
 
-	deployment.Spec = appsv1.DeploymentSpec{
+	newDeployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
 		},
@@ -457,21 +494,25 @@ func (r *HugoPageReconciler) upsertPageNginxProxy(ctx context.Context, page *hug
 	}
 
 	// Set Redirect instance as the owner and controller
-	ctrl.SetControllerReference(page, deployment, r.scheme)
+	ctrl.SetControllerReference(page, newDeployment, r.scheme)
 
 	if err != nil && k8serrors.IsNotFound(err) {
-		if err := r.client.Create(ctx, deployment); err != nil {
+		if err := r.client.Create(ctx, newDeployment); err != nil {
 			return nil, errors.Wrap(err, "Failed to create new hugo-page nginx proxy deployment")
 		}
 	} else if err != nil {
 		return nil, errors.Wrap(err, "Failed to get hugo-page nginx proxy deployment")
 	}
 
-	if err := r.client.Update(ctx, deployment); err != nil {
-		return nil, errors.Wrap(err, "Failed to update hugo-page nginx proxy deployment")
+	// only update the deployment if something has changed compared to the previous version
+
+	if !equalNginxProxyDeployment(*newDeployment, *oldDeployment) {
+		if err := r.client.Update(ctx, newDeployment); err != nil {
+			return nil, errors.Wrap(err, "Failed to update hugo-page nginx proxy deployment")
+		}
 	}
 
-	return deployment, nil
+	return newDeployment, nil
 }
 
 func (r *HugoPageReconciler) upsertConfigMap(ctx context.Context, page *hugohosterv1alpha1.HugoPage, settings *hugohosterv1alpha1.Setting) (*apiv1.ConfigMap, error) {
@@ -486,6 +527,25 @@ func (r *HugoPageReconciler) upsertConfigMap(ctx context.Context, page *hugohost
 		Labels:    makeLabels(page, "nginx-proxy"),
 	}
 
+	// Build the Hugo Build Script
+	// git clone --recurse-submodules -j8 --branch "$GIT_BRANCH" "$REPO_URL" "$PAGE_NAME"
+	// cd "$PAGE_NAME"
+	// hugo
+	// aws s3 cp public/ "s3://$S3_BUCKET_NAME/$PAGE_NAME" --recursive --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 6000
+
+	buildCmd := []string{}
+	buildCmd = append(buildCmd, "#!/usr/bin/env bash")
+	buildCmd = append(buildCmd, "set -ex")
+	buildCmd = append(buildCmd, "git clone --recurse-submodules -j8 --branch \"$GIT_BRANCH\" \"$REPO_URL\" \"$PAGE_NAME\"")
+	buildCmd = append(buildCmd, "cd \"$PAGE_NAME\"")
+	if page.Spec.Options != nil && len(page.Spec.Options.BuildCommand) > 0 {
+		buildCmd = append(buildCmd, page.Spec.Options.BuildCommand)
+	} else {
+		buildCmd = append(buildCmd, "hugo")
+	}
+	buildCmd = append(buildCmd, "aws s3 cp public/ \"s3://$S3_BUCKET_NAME/$PAGE_NAME\" --recursive --endpoint-url \"$S3_ENDPOINT\" --cli-connect-timeout 6000")
+
+	// Build the nginx settings
 	proxyUrl := settings.Spec.ProxyURL
 	if proxyUrl == "" {
 		proxyUrl = settings.Spec.S3Config.Endpoint
@@ -506,7 +566,8 @@ func (r *HugoPageReconciler) upsertConfigMap(ctx context.Context, page *hugohost
 	template.Execute(&nginxConf, nginxValue)
 
 	configMap.Data = map[string]string{
-		"nginx.conf": nginxConf.String(),
+		"nginx.conf":    nginxConf.String(),
+		"build-hugo.sh": strings.Join(buildCmd, "\n"),
 	}
 
 	// Set Redirect instance as the owner and controller
@@ -525,6 +586,106 @@ func (r *HugoPageReconciler) upsertConfigMap(ctx context.Context, page *hugohost
 	}
 
 	return configMap, nil
+}
+
+func equalNginxProxyDeployment(left, right appsv1.Deployment) bool {
+	if !cmp.Equal(left.ObjectMeta.Name, right.ObjectMeta.Name) {
+		return false
+	}
+
+	if !cmp.Equal(left.ObjectMeta.Namespace, right.ObjectMeta.Namespace) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Selector.MatchLabels, right.Spec.Selector.MatchLabels) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Replicas, right.Spec.Replicas) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.ObjectMeta.Labels, right.Spec.Template.ObjectMeta.Labels) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers), len(right.Spec.Template.Spec.Containers)) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers), 1) && !cmp.Equal(len(right.Spec.Template.Spec.Containers), 1) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].Name, right.Spec.Template.Spec.Containers[0].Name) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].Image, right.Spec.Template.Spec.Containers[0].Image) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers[0].Ports), len(right.Spec.Template.Spec.Containers[0].Ports)) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers[0].Ports), 1) && !cmp.Equal(len(right.Spec.Template.Spec.Containers[0].Ports), 1) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort, right.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers[0].VolumeMounts), len(right.Spec.Template.Spec.Containers[0].VolumeMounts)) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Containers[0].VolumeMounts), 1) && !cmp.Equal(len(right.Spec.Template.Spec.Containers[0].VolumeMounts), 1) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name, right.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath, right.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].VolumeMounts[0].SubPath, right.Spec.Template.Spec.Containers[0].VolumeMounts[0].SubPath) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Containers[0].VolumeMounts[0].ReadOnly, right.Spec.Template.Spec.Containers[0].VolumeMounts[0].ReadOnly) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Volumes), len(right.Spec.Template.Spec.Volumes)) {
+		return false
+	}
+
+	if !cmp.Equal(len(left.Spec.Template.Spec.Volumes), 1) && !cmp.Equal(len(right.Spec.Template.Spec.Volumes), 1) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Volumes[0].Name, right.Spec.Template.Spec.Volumes[0].Name) {
+		return false
+	}
+
+	if !cmp.Equal(left.Spec.Template.Spec.Volumes[0].VolumeSource.ConfigMap.LocalObjectReference.Name, right.Spec.Template.Spec.Volumes[0].VolumeSource.ConfigMap.LocalObjectReference.Name) {
+		return false
+	}
+
+	return true
+}
+
+func makeLabels(page *hugohosterv1alpha1.HugoPage, component string) map[string]string {
+	return map[string]string{
+		"app":       "hugo-hoster",
+		"component": component,
+		"page":      page.Name,
+	}
 }
 
 var nginxConfTemplate = `user  nginx;

@@ -10,15 +10,23 @@ import (
 	"go.uber.org/zap"
 )
 
-func RecordPanic(ctx context.Context, span trace.Span, zapLog *otelzap.SugaredLogger, err error, msg string, args ...any) {
-	span.RecordError(err)
-	zapLog.Ctx(ctx).Panicw(fmt.Sprintf(msg, args...), zap.Error(err), zap.String("span_id", span.SpanContext().SpanID().String()))
+func NewZapLoggerWithCtxSpanPageName(name string, ctx context.Context, span trace.Span, pageName string) otelzap.SugaredLoggerWithCtx {
+	return otelzap.L().Sugar().With(
+		zap.String("name", name),
+		zap.String("span_id", span.SpanContext().SpanID().String()),
+		zap.String("page_name", pageName),
+	).Ctx(ctx)
 }
 
-func RecordError(ctx context.Context, span trace.Span, zapLog *otelzap.SugaredLogger, err error, msg string, args ...any) error {
+func RecordPanic(zapLog *otelzap.SugaredLoggerWithCtx, span trace.Span, err error, msg string, args ...any) {
+	span.RecordError(err)
+	zapLog.Panicw(fmt.Sprintf(msg, args...), zap.Error(err), zap.String("span_id", span.SpanContext().SpanID().String()))
+}
+
+func RecordError(zapLog *otelzap.SugaredLoggerWithCtx, span trace.Span, err error, msg string, args ...any) error {
 	message := fmt.Sprintf(msg, args...)
 
-	zapLog.Ctx(ctx).Errorw(message, zap.Error(err), zap.String("span_id", span.SpanContext().SpanID().String()))
+	zapLog.Errorw(message, zap.Error(err), zap.String("span_id", span.SpanContext().SpanID().String()), zap.String("trace_id", span.SpanContext().TraceID().String()))
 
 	err = errors.Wrap(err, message)
 	span.RecordError(err)
@@ -26,9 +34,9 @@ func RecordError(ctx context.Context, span trace.Span, zapLog *otelzap.SugaredLo
 	return err
 }
 
-func RecordInfo(ctx context.Context, span trace.Span, zapLog *otelzap.SugaredLogger, msg string, args ...any) {
+func RecordInfo(zapLog *otelzap.SugaredLoggerWithCtx, span trace.Span, msg string, args ...any) {
 	message := fmt.Sprintf(msg, args...)
 
 	span.AddEvent(message)
-	zapLog.Ctx(ctx).Infow(message, zap.String("span_id", span.SpanContext().SpanID().String()))
+	zapLog.Infow(message, zap.String("span_id", span.SpanContext().SpanID().String()))
 }

@@ -17,34 +17,71 @@ limitations under the License.
 package v1alpha1
 
 import (
+	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type BuildImageOptions struct {
+	// Container image name.
+	// More info: https://kubernetes.io/docs/concepts/containers/images
+	// This field is optional to allow higher level config management to default or override
+	// container images in workload controllers like Deployments and StatefulSets.
+	// +optional
+	Image *string `json:"image,omitempty"`
+
+	// Image Tag.
+	// Defaults latest tag
+	// More info: https://kubernetes.io/docs/concepts/containers/images#updating-images
+	// +optional
+	Tag *string `json:"tag,omitempty"`
+
+	// Image pull policy.
+	// One of Always, Never, IfNotPresent.
+	// Defaults to Always if :latest tag is specified, or IfNotPresent otherwise.
+	// Cannot be updated.
+	// More info: https://kubernetes.io/docs/concepts/containers/images#updating-images
+	// +optional
+	ImagePullPolicy *apiv1.PullPolicy `json:"imagePullPolicy,omitempty"`
+}
+
+type PageOptionsSpec struct {
+	// specify a custom command to build the hugo page
+	// +optional
+	BuildCommand string `json:"command"`
+
+	// specify a custom Docker image used for building the Hugo Page
+	// +optional
+	BuildImageOptions *BuildImageOptions `json:"image,omitempty"`
+}
+
 // HugoPageSpec defines the desired state of HugoPage
 type HugoPageSpec struct {
-	// Repository specifies the target Repository to pull from for building the hugo site
+	// specifies the target Repository to pull from for building the hugo site
 	// +kubebuilder:validation:Required
 	// +kubebuilder:example:https://github.com/cedi/cedi.github.io.git
 	Repository string `json:"repository"`
 
-	// Branch specifies the branch from which to build the site. (default: main)
+	// specifies the branch from which to build the site. (default: main)
 	// +kubebuilder:default:main
 	Branch string `json:"branch,omitempty"`
 
 	// +kubebuilder:validation:Required
 	URL string `json:"url"`
 
-	// BuildType configures how the Hugo-Site is rebuild.
-	//
+	// configures how the Hugo-Site is rebuild.
 	// Poll takes the configured polling interval to rebuild the page
 	// Webhook requires a CI/CD Pipeline to call the Webhook URL of this page to re-build the site
 	// +kubebuilder:validation:Enum=cron
 	// +kubebuilder:default:cron
 	BuildType string `json:"type,omitempty"`
 
-	// CronInterval is the polling interval in which the hugo-site is refreshed as a cron syntax string
+	// the polling interval in which the hugo-site is refreshed as a cron syntax string
 	// +kubebuilder:default:"*/5 * * * *"
 	CronInterval string `json:"interval,omitempty"`
+
+	// allows you to specify custom build options
+	// +optional
+	Options *PageOptionsSpec `json:"options,omitempty"`
 }
 
 // HugoPageStatus defines the observed state of HugoPage

@@ -49,22 +49,48 @@ spec:
             description: HugoPageSpec defines the desired state of HugoPage
             properties:
               branch:
-                description: 'Branch specifies the branch from which to build the
-                  site. (default: main)'
+                description: 'specifies the branch from which to build the site. (default:
+                  main)'
                 type: string
               interval:
-                description: CronInterval is the polling interval in which the hugo-site
-                  is refreshed as a cron syntax string
+                description: the polling interval in which the hugo-site is refreshed
+                  as a cron syntax string
                 type: string
+              options:
+                description: allows you to specify custom build options
+                properties:
+                  command:
+                    description: specify a custom command to build the hugo page
+                    type: string
+                  image:
+                    description: specify a custom Docker image used for building the
+                      Hugo Page
+                    properties:
+                      image:
+                        description: 'Container image name. More info: https://kubernetes.io/docs/concepts/containers/images
+                          This field is optional to allow higher level config management
+                          to default or override container images in workload controllers
+                          like Deployments and StatefulSets.'
+                        type: string
+                      imagePullPolicy:
+                        description: 'Image pull policy. One of Always, Never, IfNotPresent.
+                          Defaults to Always if :latest tag is specified, or IfNotPresent
+                          otherwise. Cannot be updated. More info: https://kubernetes.io/docs/concepts/containers/images#updating-images'
+                        type: string
+                      tag:
+                        description: 'Image Tag. Defaults latest tag More info: https://kubernetes.io/docs/concepts/containers/images#updating-images'
+                        type: string
+                    type: object
+                type: object
               repository:
-                description: Repository specifies the target Repository to pull from
-                  for building the hugo site
+                description: specifies the target Repository to pull from for building
+                  the hugo site
                 type: string
               type:
-                description: "BuildType configures how the Hugo-Site is rebuild. \n
-                  Poll takes the configured polling interval to rebuild the page Webhook
-                  requires a CI/CD Pipeline to call the Webhook URL of this page to
-                  re-build the site"
+                description: configures how the Hugo-Site is rebuild. Poll takes the
+                  configured polling interval to rebuild the page Webhook requires
+                  a CI/CD Pipeline to call the Webhook URL of this page to re-build
+                  the site
                 enum:
                 - cron
                 type: string

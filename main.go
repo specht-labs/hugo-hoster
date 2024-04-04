@@ -75,27 +75,28 @@ func main() {
 
 	// Initialize Logging
 	otelLogger, undo := observability.InitLogging(debug)
-	defer otelLogger.Sync()
 	defer undo()
+	defer otelLogger.Sync()
 
 	ctrl.SetLogger(zapr.NewLogger(otelzap.L().Logger))
+
+	initLog := otelzap.L().Sugar()
 
 	// Initialize Tracing (OpenTelemetry)
 	traceProvider, tracer, err := observability.InitTracer(serviceName, serviceVersion)
 	if err != nil {
-		otelzap.L().Sugar().Errorw("failed initializing tracing",
+		initLog.Errorw("failed initializing tracing",
 			zap.Error(err),
 		)
 		os.Exit(1)
 	}
 
 	ctx, span := tracer.Start(context.Background(), "main.startManager")
+	log := initLog.Ctx(ctx)
 
 	defer func() {
 		if err := traceProvider.Shutdown(ctx); err != nil {
-			otelzap.L().Sugar().Errorw("Error shutting down tracer provider",
-				zap.Error(err),
-			)
+			observability.RecordError(&log, span, err, "Error shutting down tracer provider")
 		}
 	}()
 
@@ -107,10 +108,7 @@ func main() {
 		// try to read the namespace from /var/run
 		namespaceByte, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 		if err != nil {
-			span.RecordError(err)
-			otelzap.L().Sugar().Errorw("Error shutting down tracer provider",
-				zap.Error(err),
-			)
+			observability.RecordError(&log, span, err, "Error shutting down tracer provider")
 			os.Exit(1)
 		}
 		span.End()
@@ -131,10 +129,7 @@ func main() {
 	})
 
 	if err != nil {
-		span.RecordError(err)
-		otelzap.L().Sugar().Errorw("unable to start urlshortener",
-			zap.Error(err),
-		)
+		observability.RecordError(&log, span, err, "Unable to start hugo-hoster")
 		os.Exit(1)
 	}
 
@@ -158,11 +153,7 @@ func main() {
 	)
 
 	if err = hugoPageController.SetupWithManager(mgr); err != nil {
-		span.RecordError(err)
-		otelzap.L().Sugar().Errorw("unable to create controller",
-			zap.Error(err),
-			zap.String("controller", "HugoSite"),
-		)
+		observability.RecordError(&log, span, err, "Unable to create controller")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
@@ -170,23 +161,17 @@ func main() {
 	span.End()
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		otelzap.L().Sugar().Errorw("unable to set up health check",
-			zap.Error(err),
-		)
+		observability.RecordError(&log, span, err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		otelzap.L().Sugar().Errorw("unable to set up ready check",
-			zap.Error(err),
-		)
+		observability.RecordError(&log, span, err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
-	otelzap.L().Info("starting Hugo-Hoster")
+	log.Infof("starting Hugo-Hoster %s", serviceVersion)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		otelzap.L().Sugar().Errorw("unable running manager",
-			zap.Error(err),
-		)
+		observability.RecordError(&log, span, err, "unable running manager")
 		os.Exit(1)
 	}
 }
