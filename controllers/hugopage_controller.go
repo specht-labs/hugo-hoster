@@ -191,7 +191,7 @@ func (r *HugoPageReconciler) upsertPageBuilderCronJob(ctx context.Context, page 
 		Labels:    makeLabels(page, "builder"),
 	}
 
-	defaultImage := "ghcr.io/hugo-hoster/page_builder"
+	defaultImage := "ghcr.io/specht-labs/page_builder"
 	defaultTag := "main"
 	imagePullPolicy := apiv1.PullIfNotPresent
 	builderContainerImage := fmt.Sprintf("%s:%s", defaultImage, defaultTag)
