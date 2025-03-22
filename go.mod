@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/zapr v1.2.0
 	github.com/google/go-cmp v0.5.9
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.18.1
+	github.com/onsi/gomega v1.36.3
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.1
 	github.com/uptrace/opentelemetry-go-extra/otelzap v0.3.2
