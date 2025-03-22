@@ -36,6 +36,7 @@ import (
 	"github.com/cedi/hugo-hoster/controllers"
 	"github.com/cedi/hugo-hoster/pkg/observability"
 	"github.com/go-logr/zapr"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	//+kubebuilder:scaffold:imports
 
@@ -60,7 +61,6 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var namespaced bool
 	var debug bool
 	var settingsName string
 
@@ -68,7 +68,6 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&namespaced, "namespaced", true, "Restrict the hugo-hoster to only list resources in the current namespace")
 	flag.BoolVar(&debug, "debug", false, "Turn on debug logging")
 
 	flag.Parse()
@@ -100,32 +99,17 @@ func main() {
 		}
 	}()
 
-	// Start namespaced
-	namespace := ""
-
-	if namespaced {
-		_, span := tracer.Start(context.Background(), "main.loadNamespace")
-		// try to read the namespace from /var/run
-		namespaceByte, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-		if err != nil {
-			observability.RecordError(&log, span, err, "Error shutting down tracer provider")
-			os.Exit(1)
-		}
-		span.End()
-		namespace = string(namespaceByte)
-	}
-
 	_, span = tracer.Start(context.Background(), "main.startManager")
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                        scheme,
-		MetricsBindAddress:            metricsAddr,
-		Port:                          9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
 		HealthProbeBindAddress:        probeAddr,
 		LeaderElection:                false,
 		LeaderElectionID:              "9123ff57.cedi.dev",
 		LeaderElectionReleaseOnCancel: false,
-		Namespace:                     namespace,
 	})
 
 	if err != nil {

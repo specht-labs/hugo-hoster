@@ -103,7 +103,6 @@ func InitLogging(debug bool) (*otelzap.Logger, func()) {
 	}
 
 	otelZap := otelzap.New(zapLog,
-		otelzap.WithTraceIDField(true),
 		otelzap.WithCaller(true),
 		otelzap.WithErrorStatusLevel(zap.ErrorLevel),
 		otelzap.WithStackTrace(withStackTrace),
